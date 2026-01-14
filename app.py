@@ -23,10 +23,31 @@ import sys
 def refresh_data():
     with st.spinner("Downloading new data and recalculating..."):
         try:
+            # Get the directory of the current script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Construct absolute paths to the scripts
+            downloader_script = os.path.join(script_dir, "generation_downloader.py")
+            calculator_script = os.path.join(script_dir, "co2_calculator.py")
+            
             # Run downloader with incremental flag
-            result_down = subprocess.run([sys.executable, "generation_downloader.py", "--incremental"], capture_output=True, text=True, check=True)
+            # We also set cwd=script_dir to ensure the scripts find/save CSVs in the right place
+            result_down = subprocess.run(
+                [sys.executable, downloader_script, "--incremental"], 
+                capture_output=True, 
+                text=True, 
+                check=True,
+                cwd=script_dir
+            )
+            
             # Run calculator
-            result_calc = subprocess.run([sys.executable, "co2_calculator.py"], capture_output=True, text=True, check=True)
+            result_calc = subprocess.run(
+                [sys.executable, calculator_script], 
+                capture_output=True, 
+                text=True, 
+                check=True,
+                cwd=script_dir
+            )
             
             st.sidebar.success("Data updated successfully!")
             
