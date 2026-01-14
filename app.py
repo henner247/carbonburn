@@ -18,13 +18,30 @@ All values are shown in **Million Tonnes (Mt)**.
 # Sidebar for controls
 st.sidebar.header("Controls")
 
+import sys
+
 def refresh_data():
     with st.spinner("Downloading new data and recalculating..."):
-        # Run downloader with incremental flag
-        subprocess.run(["python", "generation_downloader.py", "--incremental"], check=True)
-        # Run calculator
-        subprocess.run(["python", "co2_calculator.py"], check=True)
-    st.sidebar.success("Data updated successfully!")
+        try:
+            # Run downloader with incremental flag
+            result_down = subprocess.run([sys.executable, "generation_downloader.py", "--incremental"], capture_output=True, text=True, check=True)
+            # Run calculator
+            result_calc = subprocess.run([sys.executable, "co2_calculator.py"], capture_output=True, text=True, check=True)
+            
+            st.sidebar.success("Data updated successfully!")
+            
+        except subprocess.CalledProcessError as e:
+            st.sidebar.error("An error occurred while updating data.")
+            with st.sidebar.expander("Error Details"):
+                st.code(f"Command: {e.cmd}\nReturn Code: {e.returncode}")
+                if e.stdout:
+                    st.text("Output:")
+                    st.code(e.stdout)
+                if e.stderr:
+                    st.text("Error Output:")
+                    st.code(e.stderr)
+        except Exception as e:
+            st.sidebar.error(f"Unexpected error: {str(e)}")
 
 if st.sidebar.button("🔄 Refresh Data"):
     refresh_data()
