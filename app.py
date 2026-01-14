@@ -5,13 +5,14 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import subprocess
 import os
+from generation_downloader import COUNTRIES
 
 # Page configuration
 st.set_page_config(page_title="EU CO2 Emissions Dashboard", layout="wide")
 
 st.title("🌍 EU Fossil Fuel CO2 Emissions Dashboard")
-st.markdown("""
-This dashboard analyzes CO2 emissions from fossil fuel power generation across 11 major EU countries.
+st.markdown(f"""
+This dashboard analyzes CO2 emissions from fossil fuel power generation across {len(COUNTRIES)} major EU countries.
 All values are shown in **Million Tonnes (Mt)**.
 """)
 
@@ -66,6 +67,12 @@ def refresh_data():
 
 if st.sidebar.button("🔄 Refresh Data"):
     refresh_data()
+
+st.sidebar.divider()
+with st.sidebar.expander("📍 Tracked Countries"):
+    st.write("The dashboard aggregates data from the following countries:")
+    for country in sorted(COUNTRIES.keys()):
+        st.write(f"- {country}")
 
 # Load Data
 @st.cache_data(ttl=3600)
@@ -190,7 +197,7 @@ else:
         current_daily_avg = window_df.iloc[-1]['Avg_CO2_Daily'] if not window_df.empty else 0
         st.metric("Recent Daily Avg (Mt)", f"{current_daily_avg:.2f}")
     with col3:
-        total_countries = 11
+        total_countries = len(COUNTRIES)
         st.metric("Countries", total_countries)
 
     st.divider()
