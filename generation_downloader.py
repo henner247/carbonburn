@@ -134,6 +134,76 @@ def get_latest_date_from_csv(file_path):
         print(f"Warning: Could not read existing CSV: {e}")
     return None
 
+def validate_data(df, country_name):
+    """
+    Run quality checks on the data.
+    Returns a list of warning messages.
+    """
+    warnings = []
+    
+    if df is None or df.empty:
+        return ["No data to validate"]
+        
+    # Check 1: Continuous sequences of zero generation
+    # We focus on major fuels where 0 is suspicious for large countries
+    # 'Gas_GWh' is the most common one to have issues
+    check_cols = ['Gas_GWh', 'Lignite_GWh', 'Hard_Coal_GWh']
+    
+    # Sort just in case
+    df = df.sort_values('Date')
+    
+    for col in check_cols:
+        if col not in df.columns:
+            continue
+            
+        # Get series of booleans where value is effectively 0
+        is_zero = df[col] < 0.001 
+        
+        # Group by consecutive identical values and count
+        # This gives us groups of True/False
+        # We only care about groups of True (zeros)
+        groups = is_zero.ne(is_zero.shift()).cumsum()
+        lens = is_zero.groupby(groups).size()
+        
+        # Find groups that are True (zeros) and length > threshold
+        # We need to map back to which group index corresponds to is_zero=True
+        # One simple way: iterate the groups that are True
+        
+        # Simple iteration for clarity
+        current_zero_run = 0
+        start_date = None
+        
+        for idx, row in df.iterrows():
+            val = row[col]
+            date = row['Date']
+            
+            if val < 0.001:
+                if current_zero_run == 0:
+                    start_date = date
+                current_zero_run += 1
+            else:
+                if current_zero_run > 5: # Threshold: 5 days
+                    warnings.append(f"Suspicious zero generation for {col} from {start_date.date()} to {(date - timedelta(days=1)).date()} ({current_zero_run} days)")
+                current_zero_run = 0
+                start_date = None
+                
+        # Check if it ended on a zero run
+        if current_zero_run > 5:
+             warnings.append(f"Suspicious zero generation for {col} from {start_date.date()} to {df['Date'].iloc[-1].date()} ({current_zero_run} days)")
+
+    # Check 2: Missing dates (gaps)
+    if len(df) > 1:
+        date_range = pd.date_range(start=df['Date'].min(), end=df['Date'].max())
+        if len(date_range) != len(df):
+            missing = set(date_range) - set(df['Date'])
+            if len(missing) < 10:
+                missing_str = ", ".join([d.strftime('%Y-%m-%d') for d in sorted(missing)])
+                warnings.append(f"Missing dates: {missing_str}")
+            else:
+                warnings.append(f"Missing {len(missing)} dates between {df['Date'].min().date()} and {df['Date'].max().date()}")
+
+    return warnings
+
 def download_all_countries(start_date, end_date, output_file='eu_generation_daily.csv'):
     """
     Download and aggregate data for all countries.
@@ -158,6 +228,14 @@ def download_all_countries(start_date, end_date, output_file='eu_generation_dail
         if hourly_df is not None and not hourly_df.empty:
             # Aggregate to daily
             daily_df = aggregate_daily(hourly_df, country_name)
+            
+            # Validate data
+            warnings = validate_data(daily_df, country_name)
+            if warnings:
+                print(f"  [WARNING] Data validation issues found for {country_name}:")
+                for w in warnings:
+                    print(f"    - {w}")
+            
             all_data.append(daily_df)
             print(f"  [OK] Downloaded {len(daily_df)} days of data")
         else:
