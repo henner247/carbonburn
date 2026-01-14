@@ -93,6 +93,63 @@ if df is None:
 else:
     # --- Data Calculations ---
     most_recent_date = df['Date'].max()
+    current_year = most_recent_date.year
+    current_doy = most_recent_date.dayofyear
+    
+    # 0. YTD Comparison Table (New Feature)
+    st.markdown(f"### 📅 Year-to-Date Comparison (Jan 1 - {most_recent_date.strftime('%b %d')})")
+    
+    ytd_stats = []
+    # Compare current year and last 2 years
+    target_years = [current_year, current_year - 1, current_year - 2]
+    
+    for year in target_years:
+        # Filter data for this year up to the current Day of Year
+        # Note: We must check if year exists in data
+        year_data = df[(df['Year'] == year) & (df['DayOfYear'] <= current_doy)]
+        
+        if not year_data.empty:
+            ytd_sum = year_data['Total_CO2_Mt'].sum()
+            
+            # success previous year data for comparison
+            prev_year_data = df[(df['Year'] == year - 1) & (df['DayOfYear'] <= current_doy)]
+            
+            if not prev_year_data.empty:
+                prev_sum = prev_year_data['Total_CO2_Mt'].sum()
+                diff_mt = ytd_sum - prev_sum
+                diff_pct = (diff_mt / prev_sum) * 100
+            else:
+                diff_mt = None
+                diff_pct = None
+                
+            ytd_stats.append({
+                'Year': str(year),
+                'Emissions (Mt)': ytd_sum,
+                'Diff vs Prev (Mt)': diff_mt,
+                'Diff vs Prev (%)': diff_pct
+            })
+            
+    ytd_df = pd.DataFrame(ytd_stats)
+    
+    # Format the table
+    if not ytd_df.empty:
+        # Custom formatting function for display
+        def format_row(row):
+            res = row.copy()
+            res['Emissions (Mt)'] = f"{row['Emissions (Mt)']:.2f}"
+            
+            if pd.notnull(row['Diff vs Prev (Mt)']):
+                sign = "+" if row['Diff vs Prev (Mt)'] > 0 else ""
+                res['Diff vs Prev (Mt)'] = f"{sign}{row['Diff vs Prev (Mt)']:.2f}"
+                res['Diff vs Prev (%)'] = f"{sign}{row['Diff vs Prev (%)']:.1f}%"
+            else:
+                res['Diff vs Prev (Mt)'] = "-"
+                res['Diff vs Prev (%)'] = "-"
+            return res
+
+        display_df = ytd_df.apply(format_row, axis=1)
+        st.table(display_df.set_index('Year'))
+
     last_14_days_start = most_recent_date - timedelta(days=13)
     
     # 1. Cumulative Data
