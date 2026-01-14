@@ -16,7 +16,10 @@ COUNTRIES = {
     'Sweden': 'se',
     'Austria': 'at',
     'Czech Republic': 'cz',
-    'Romania': 'ro'
+    'Romania': 'ro',
+    'Greece': 'gr',
+    'Portugal': 'pt',
+    'Hungary': 'hu'
 }
 
 # Fuel type mappings
@@ -121,18 +124,18 @@ def aggregate_daily(df, country_name):
     
     return daily
 
-def get_latest_date_from_csv(file_path):
-    """Find the latest date in the existing CSV file."""
+def get_latest_dates_by_country(file_path):
+    """Find the latest date for each country in the existing CSV file."""
     if not os.path.exists(file_path):
-        return None
+        return {}
     try:
         df = pd.read_csv(file_path)
-        if 'Date' in df.columns:
+        if 'Date' in df.columns and 'Country' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'])
-            return df['Date'].max()
+            return df.groupby('Country')['Date'].max().to_dict()
     except Exception as e:
         print(f"Warning: Could not read existing CSV: {e}")
-    return None
+    return {}
 
 def validate_data(df, country_name):
     """
@@ -183,13 +186,18 @@ def validate_data(df, country_name):
                 current_zero_run += 1
             else:
                 if current_zero_run > 5: # Threshold: 5 days
-                    warnings.append(f"Suspicious zero generation for {col} from {start_date.date()} to {(date - timedelta(days=1)).date()} ({current_zero_run} days)")
+                    # Ensure we format the date correctly regardless of type
+                    s_date = start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else str(start_date)
+                    e_date = (date - timedelta(days=1)).strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date - timedelta(days=1))
+                    warnings.append(f"Suspicious zero generation for {col} from {s_date} to {e_date} ({current_zero_run} days)")
                 current_zero_run = 0
                 start_date = None
                 
         # Check if it ended on a zero run
         if current_zero_run > 5:
-             warnings.append(f"Suspicious zero generation for {col} from {start_date.date()} to {df['Date'].iloc[-1].date()} ({current_zero_run} days)")
+             s_date = start_date.strftime('%Y-%m-%d') if hasattr(start_date, 'strftime') else str(start_date)
+             e_date = df['Date'].iloc[-1].strftime('%Y-%m-%d') if hasattr(df['Date'].iloc[-1], 'strftime') else str(df['Date'].iloc[-1])
+             warnings.append(f"Suspicious zero generation for {col} from {s_date} to {e_date} ({current_zero_run} days)")
 
     # Check 2: Missing dates (gaps)
     if len(df) > 1:
@@ -204,7 +212,7 @@ def validate_data(df, country_name):
 
     return warnings
 
-def download_all_countries(start_date, end_date, output_file='eu_generation_daily.csv'):
+def download_all_countries(start_date, end_date, output_file='eu_generation_daily.csv', incremental_map=None):
     """
     Download and aggregate data for all countries.
     """
@@ -222,8 +230,20 @@ def download_all_countries(start_date, end_date, output_file='eu_generation_dail
     for country_name, country_code in COUNTRIES.items():
         print(f"\nProcessing {country_name}...")
         
+        # Determine start date for this country
+        current_start = start_date
+        if incremental_map and country_name in incremental_map:
+            latest = incremental_map[country_name]
+            # Start from the day after the latest record
+            current_start = (latest + timedelta(days=1)).strftime('%Y-%m-%d')
+            print(f"  [INFO] Incremental mode: latest record is {latest.date()}. Resuming from {current_start}")
+        
+        if current_start > end_date:
+            print(f"  [SKIP] Data already up to date (latest: {current_start})")
+            continue
+
         # Download hourly data
-        hourly_df = download_generation(country_code, start_date, end_date)
+        hourly_df = download_generation(country_code, current_start, end_date)
         
         if hourly_df is not None and not hourly_df.empty:
             # Aggregate to daily
@@ -278,12 +298,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     start_date = args.start
+    incremental_map = None
+
     if args.incremental or (start_date is None and os.path.exists(args.output)):
-        latest = get_latest_date_from_csv(args.output)
-        if latest:
-            # Start from the latest date we have
-            start_date = latest.strftime('%Y-%m-%d')
-            print(f"Incremental update: detected latest date {start_date} in {args.output}")
+        incremental_map = get_latest_dates_by_country(args.output)
+        # If we have any data, default start_date to the minimum of the latest dates to be safe
+        # but the actual logic is now per-country inside download_all_countries.
+        if not start_date:
+             start_date = '2023-01-01'
+        print(f"Incremental update: detected data for {len(incremental_map)} countries.")
     
     # Use default start if still None
     if start_date is None:
@@ -293,8 +316,5 @@ if __name__ == "__main__":
     if args.end is None:
         args.end = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     
-    # If start is after or same as end (except for today's check), we might already be up to date
-    if start_date > args.end:
-        print(f"Data is already up to date (up to {start_date}).")
-    else:
-        new_data = download_all_countries(start_date, args.end, args.output)
+    # Execute download
+    new_data = download_all_countries(start_date, args.end, args.output, incremental_map=incremental_map)
