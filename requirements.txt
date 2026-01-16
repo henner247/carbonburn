@@ -1,6 +1,5 @@
-pandas
 streamlit
+pandas
 plotly
 requests
-matplotlib
-numpy
+urllib3
