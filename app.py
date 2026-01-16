@@ -155,7 +155,7 @@ def load_and_process_data():
     hard_coal = df_daily['Fossil hard coal'] if 'Fossil hard coal' in cols else 0
     gas = df_daily['Fossil gas'] if 'Fossil gas' in cols else 0
     
-    df_daily['CO2_Proxy'] = (lignite * 1.15) + (hard_coal * 0.85) + (gas * 0.45)
+    df_daily['CO2_Proxy'] = (lignite * 1.12) + (hard_coal * 0.80) + (gas * 0.43)
     
     # Metadaten für Plotly
     df_daily['Year'] = df_daily.index.year
@@ -244,4 +244,5 @@ st.plotly_chart(fig_rolling, use_container_width=True)
 
 # TABELLE
 with st.expander("Rohdaten ansehen"):
+
     st.dataframe(df_daily[[selected_col]].sort_index(ascending=False).round(1))
